@@ -14,7 +14,7 @@ identify known vulnerabilities, and evaluate software release integrity.
 
 
 
-\## Technology Stack
+## Technology Stack
 
 
 
