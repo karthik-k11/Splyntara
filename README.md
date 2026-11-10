@@ -1,4 +1,4 @@
-\# Splyntara
+# Splyntara
 
 
 
@@ -18,23 +18,23 @@ identify known vulnerabilities, and evaluate software release integrity.
 
 
 
-\- Python
+- Python
 
-\- Flask
+- Flask
 
-\- SQLite
+- SQLite
 
-\- CycloneDX
+- CycloneDX
 
-\- OSV Vulnerability Database
+- OSV Vulnerability Database
 
-\- HTML, CSS, JavaScript
+- HTML, CSS, JavaScript
 
-\- pytest
+- pytest
 
 
 
-\## Project Status
+## Project Status
 
 
 
@@ -42,19 +42,19 @@ Currently in initial development.
 
 
 
-\### Planned Development
+### Planned Development
 
 
 
-\- Phase 1: Basic Supply-Chain Analysis
+- Phase 1: Basic Supply-Chain Analysis
 
-\- Phase 2: Intermediate Supply-Chain Security
+- Phase 2: Intermediate Supply-Chain Security
 
-\- Phase 3: Advanced Release Assurance
+- Phase 3: Advanced Release Assurance
 
 
 
-\## Installation
+## Installation
 
 
 
