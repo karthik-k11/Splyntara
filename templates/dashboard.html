@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Splyntara · Dependency security dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+  <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-copy">
+          <span class="brand-name">Splyntara</span>
+          <span class="brand-caption">Supply-chain security</span>
+        </span>
+      </div>
+      <div class="header-meta">
+        <span>Local workbench</span>
+        <span class="meta-divider" aria-hidden="true"></span>
+        <span>CycloneDX 1.5</span>
+        <span class="meta-divider" aria-hidden="true"></span>
+        <span>OSV</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <section class="intro" aria-labelledby="page-title">
+      <div class="intro-copy">
+        <p class="eyebrow">Security overview</p>
+        <h1 id="page-title">Dependency security dashboard</h1>
+        <p class="lede">
+          Inspect Python manifests, review OSV findings, and export an evidence
+          snapshot for a local project. Analysis runs once per submission, and
+          resolved versions are never inferred from manifest declarations.
+        </p>
+      </div>
+
+      <form id="analysis-form" class="project-form" novalidate>
+        <label for="project-directory">Project directory</label>
+        <div class="input-row">
+          <input
+            id="project-directory"
+            name="project_directory"
+            type="text"
+            placeholder="C:\path\to\project"
+            autocomplete="off"
+            spellcheck="false"
+            aria-describedby="directory-hint directory-error"
+            required
+          >
+          <button id="analyze-button" class="button button-primary" type="submit">
+            <span class="button-label">Run analysis</span>
+            <span class="spinner" aria-hidden="true" hidden></span>
+          </button>
+        </div>
+        <p id="directory-hint" class="field-hint">
+          Scans <code>requirements.txt</code> and <code>pyproject.toml</code>.
+          Only packages with an explicit resolved version are sent to OSV.
+        </p>
+        <p id="directory-error" class="field-error" role="alert" hidden></p>
+      </form>
+    </section>
+
+    <div id="status-banner" class="banner" role="status" aria-live="polite" hidden>
+      <span class="banner-indicator" aria-hidden="true"></span>
+      <div class="banner-content">
+        <p id="banner-title" class="banner-title"></p>
+        <p id="banner-message" class="banner-message"></p>
+        <ul id="banner-list" class="banner-list" hidden></ul>
+      </div>
+    </div>
+
+    <section id="initial-state" class="initial-state" aria-labelledby="initial-title">
+      <div>
+        <p class="eyebrow">No analysis yet</p>
+        <h2 id="initial-title">Start with a local project directory</h2>
+        <p>
+          Splyntara reads dependency manifests from the supplied directory. It
+          does not execute project code, install packages, or upload source
+          files.
+        </p>
+      </div>
+      <dl class="initial-facts">
+        <div>
+          <dt>Inventory</dt>
+          <dd>Declared constraints and manifest sources</dd>
+        </div>
+        <div>
+          <dt>Findings</dt>
+          <dd>OSV advisories for resolved versions only</dd>
+        </div>
+        <div>
+          <dt>Exports</dt>
+          <dd>CycloneDX SBOM, JSON report, HTML report</dd>
+        </div>
+      </dl>
+    </section>
+
+    <div id="results" class="results" hidden>
+      <section class="panel" aria-labelledby="overview-title">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Snapshot</p>
+            <h2 id="overview-title">Security overview</h2>
+          </div>
+          <span id="project-badge" class="project-badge"></span>
+        </div>
+
+        <div class="metric-grid">
+          <div class="metric">
+            <span class="metric-label">Dependencies</span>
+            <span id="metric-total" class="metric-value">0</span>
+            <span class="metric-note">normalized inventory</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Vulnerable deps</span>
+            <span id="metric-vulnerable" class="metric-value">0</span>
+            <span class="metric-note">with OSV findings</span>
+          </div>
+          <div class="metric">
+            <span class="metric-label">Vulnerabilities</span>
+            <span id="metric-vulnerabilities" class="metric-value">0</span>
+            <span class="metric-note">total findings</span>
+          </div>
+          <div class="metric metric-critical">
+            <span class="metric-label">Critical</span>
+            <span id="metric-critical" class="metric-value">0</span>
+            <span class="metric-note">dependency risk</span>
+          </div>
+          <div class="metric metric-high">
+            <span class="metric-label">High</span>
+            <span id="metric-high" class="metric-value">0</span>
+            <span class="metric-note">dependency risk</span>
+          </div>
+          <div class="metric metric-medium">
+            <span class="metric-label">Medium</span>
+            <span id="metric-medium" class="metric-value">0</span>
+            <span class="metric-note">dependency risk</span>
+          </div>
+          <div class="metric metric-low">
+            <span class="metric-label">Low</span>
+            <span id="metric-low" class="metric-value">0</span>
+            <span class="metric-note">dependency risk</span>
+          </div>
+          <div class="metric metric-unknown">
+            <span class="metric-label">Unknown</span>
+            <span id="metric-unknown" class="metric-value">0</span>
+            <span class="metric-note">unknown risk</span>
+          </div>
+        </div>
+
+        <div class="overview-strip">
+          <div class="strip-item">
+            <span class="strip-label">Project risk</span>
+            <span id="project-risk-badge" class="badge risk-unknown">Unknown</span>
+          </div>
+          <div class="strip-item">
+            <span class="strip-label">Scan coverage</span>
+            <span id="coverage-status" class="badge coverage-unavailable">Unavailable</span>
+          </div>
+          <div class="strip-item">
+            <span class="strip-label">Unresolved</span>
+            <span id="metric-unresolved" class="strip-value">0</span>
+          </div>
+          <div class="strip-item">
+            <span class="strip-label">Incomplete coverage</span>
+            <span id="metric-incomplete" class="strip-value">0</span>
+          </div>
+          <div class="strip-item">
+            <span class="strip-label">Checked by OSV</span>
+            <span id="metric-checked" class="strip-value">0</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="inventory-title">
+        <div class="panel-heading panel-heading-tools">
+          <div>
+            <p class="section-kicker">Inventory</p>
+            <h2 id="inventory-title">Dependency inventory</h2>
+          </div>
+          <div class="table-tools">
+            <label class="search-field">
+              <span class="sr-only">Filter dependencies by package name</span>
+              <input id="inventory-search" type="search" placeholder="Filter packages" autocomplete="off">
+            </label>
+            <label class="select-field">
+              <span class="sr-only">Filter dependencies by risk</span>
+              <select id="inventory-risk-filter">
+                <option value="">All risk levels</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <p id="inventory-note" class="panel-note"></p>
+        <div class="table-wrap">
+          <table id="inventory-table" class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Package</th>
+                <th scope="col">Declared constraints</th>
+                <th scope="col">Resolved version</th>
+                <th scope="col">Manifest source</th>
+                <th scope="col">Risk</th>
+                <th scope="col" class="numeric">Vulns</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-body"></tbody>
+          </table>
+        </div>
+        <p id="inventory-empty" class="table-empty" hidden>No dependencies match the current filters.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="findings-title">
+        <div class="panel-heading panel-heading-tools">
+          <div>
+            <p class="section-kicker">Advisories</p>
+            <h2 id="findings-title">Vulnerability findings</h2>
+          </div>
+          <div class="table-tools">
+            <label class="select-field">
+              <span class="sr-only">Filter findings by severity</span>
+              <select id="vulnerability-filter">
+                <option value="">All severities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        <p id="findings-note" class="panel-note"></p>
+        <div class="table-wrap">
+          <table id="vulnerability-table" class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Package</th>
+                <th scope="col">Vulnerability</th>
+                <th scope="col">Severity</th>
+                <th scope="col">Summary</th>
+                <th scope="col">Fixed versions</th>
+                <th scope="col">References</th>
+              </tr>
+            </thead>
+            <tbody id="vulnerability-body"></tbody>
+          </table>
+        </div>
+        <p id="vulnerability-empty" class="table-empty" hidden>No findings match the current filter.</p>
+      </section>
+
+      <section class="panel" aria-labelledby="risk-title">
+        <div class="panel-heading">
+          <div>
+            <p class="section-kicker">Classification</p>
+            <h2 id="risk-title">Risk analysis</h2>
+          </div>
+        </div>
+
+        <div class="risk-overview">
+          <div class="risk-overview-head">
+            <span class="strip-label">Overall project risk</span>
+            <span id="risk-overview-badge" class="badge risk-unknown">Unknown</span>
+          </div>
+          <p id="project-risk-reason" class="risk-reason"></p>
+        </div>
+
+        <div id="risk-warning-list" class="notice-list" hidden></div>
+
+        <div class="table-wrap">
+          <table id="risk-table" class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Package</th>
+                <th scope="col">Version</th>
+                <th scope="col">Risk</th>
+                <th scope="col">Coverage</th>
+                <th scope="col" class="numeric">Vulns</th>
+                <th scope="col">Reasons</th>
+              </tr>
+            </thead>
+            <tbody id="risk-body"></tbody>
+          </table>
+        </div>
+        <p id="risk-empty" class="table-empty" hidden>No dependencies were available for risk classification.</p>
+      </section>
+
+      <div class="split-panels">
+        <section class="panel" aria-labelledby="sbom-title">
+          <div class="panel-heading panel-heading-tools">
+            <div>
+              <p class="section-kicker">Artifact</p>
+              <h2 id="sbom-title">CycloneDX SBOM</h2>
+            </div>
+            <button id="sbom-button" class="button button-secondary" type="button">
+              <span class="button-label">Generate SBOM</span>
+              <span class="spinner" aria-hidden="true" hidden></span>
+            </button>
+          </div>
+          <p class="panel-note">
+            Generates a CycloneDX 1.5 JSON document from the current inventory.
+            Declared constraints are recorded as properties; resolved versions
+            are not invented.
+          </p>
+          <p id="sbom-status" class="inline-status">No SBOM generated in this session.</p>
+          <a id="sbom-download" class="button button-secondary" href="#" download hidden>Download JSON</a>
+        </section>
+
+        <section class="panel" aria-labelledby="report-title">
+          <div class="panel-heading panel-heading-tools">
+            <div>
+              <p class="section-kicker">Evidence</p>
+              <h2 id="report-title">Security report</h2>
+            </div>
+            <div class="button-row">
+              <button id="report-json" class="button button-secondary" type="button" disabled>Download JSON</button>
+              <button id="report-html" class="button button-secondary" type="button" disabled>Download HTML</button>
+            </div>
+          </div>
+          <p class="panel-note">
+            The report snapshot is generated during analysis and includes the
+            scan summary, inventory, findings, risk explanations, coverage
+            limitations, and warnings.
+          </p>
+          <p id="report-meta" class="inline-status">Run an analysis to create a report snapshot.</p>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="page-footer">
+    <p>
+      Splyntara reads manifests locally. Package names and explicit resolved
+      versions are the only project data sent to OSV.
+    </p>
+  </footer>
+
+  <noscript>
+    <div class="noscript">Splyntara's dashboard requires JavaScript for analysis and report exports.</div>
+  </noscript>
+</body>
+</html>

@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{ report.project.name or "Project" }} · Splyntara security report</title>
+  <style>
+    :root {
+      --text: #172033;
+      --muted: #5b667a;
+      --faint: #7d8798;
+      --border: #d9dee7;
+      --surface: #ffffff;
+      --surface-subtle: #f8fafc;
+      --critical: #b42318;
+      --critical-bg: #fef3f2;
+      --critical-border: #fecdca;
+      --high: #b54708;
+      --high-bg: #fffaeb;
+      --high-border: #fedf89;
+      --medium: #854d0e;
+      --medium-bg: #fefce8;
+      --medium-border: #fde68a;
+      --low: #175cd3;
+      --low-bg: #eff8ff;
+      --low-border: #bfdbfe;
+      --unknown: #475467;
+      --unknown-bg: #f2f4f7;
+      --unknown-border: #d0d5dd;
+      --success: #067647;
+      --success-bg: #ecfdf3;
+      --success-border: #abefc6;
+      --accent: #0f6b5d;
+      --mono: "SFMono-Regular", "Cascadia Code", "Consolas", monospace;
+      --sans: "Inter", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--text);
+      background: #f4f5f7;
+      font-family: var(--sans);
+      font-size: 13px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    h1, h2, h3, p { margin: 0; }
+    code { font-family: var(--mono); font-size: 0.92em; }
+    a { color: #0b5cab; overflow-wrap: anywhere; }
+
+    .sheet {
+      max-width: 1080px;
+      margin: 28px auto;
+      padding: 34px 38px 30px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+    }
+
+    .report-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 32px;
+      padding-bottom: 22px;
+      border-bottom: 2px solid #111827;
+    }
+
+    .brand {
+      color: var(--accent);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin-top: 5px;
+      font-size: 28px;
+      line-height: 1.15;
+      letter-spacing: -0.025em;
+    }
+
+    .project-name {
+      margin-top: 6px;
+      font-size: 15px;
+      font-weight: 650;
+    }
+
+    .project-path {
+      margin-top: 2px;
+      color: var(--faint);
+      font-family: var(--mono);
+      font-size: 11px;
+      overflow-wrap: anywhere;
+    }
+
+    .report-meta {
+      display: grid;
+      grid-template-columns: auto auto;
+      gap: 3px 14px;
+      align-content: start;
+      flex: 0 0 auto;
+      font-size: 11.5px;
+    }
+
+    .report-meta .label {
+      color: var(--faint);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    section { margin-top: 26px; }
+
+    h2 {
+      padding-bottom: 7px;
+      border-bottom: 1px solid var(--border);
+      font-size: 15px;
+      letter-spacing: -0.01em;
+    }
+
+    h3 {
+      margin-top: 16px;
+      font-size: 12px;
+      letter-spacing: 0.02em;
+    }
+
+    .section-note {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 1px;
+      margin-top: 10px;
+      padding: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+    }
+
+    .metric {
+      padding: 10px 12px;
+      background: var(--surface);
+    }
+
+    .metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .metric-value {
+      display: block;
+      margin-top: 2px;
+      font-size: 21px;
+      font-weight: 700;
+      line-height: 1.1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .risk-overview {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      margin-top: 12px;
+      padding: 11px 13px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-left: 3px solid #111827;
+    }
+
+    .risk-overview p {
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 1px 6px;
+      color: var(--unknown);
+      background: var(--unknown-bg);
+      border: 1px solid var(--unknown-border);
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .badge::before {
+      content: "";
+      width: 4px;
+      height: 4px;
+      background: currentColor;
+      border-radius: 50%;
+    }
+
+    .badge.risk-critical { color: var(--critical); background: var(--critical-bg); border-color: var(--critical-border); }
+    .badge.risk-high { color: var(--high); background: var(--high-bg); border-color: var(--high-border); }
+    .badge.risk-medium { color: var(--medium); background: var(--medium-bg); border-color: var(--medium-border); }
+    .badge.risk-low { color: var(--low); background: var(--low-bg); border-color: var(--low-border); }
+    .badge.risk-unknown { color: var(--unknown); background: var(--unknown-bg); border-color: var(--unknown-border); }
+    .badge.coverage-complete { color: var(--success); background: var(--success-bg); border-color: var(--success-border); }
+    .badge.coverage-partial, .badge.coverage-unresolved { color: var(--high); background: var(--high-bg); border-color: var(--high-border); }
+    .badge.coverage-unavailable, .badge.coverage-empty { color: var(--unknown); background: var(--unknown-bg); border-color: var(--unknown-border); }
+
+    .callout {
+      margin-top: 12px;
+      padding: 11px 13px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--unknown);
+      background: var(--surface-subtle);
+    }
+
+    .callout.warning {
+      border-left-color: var(--high);
+      background: var(--high-bg);
+      border-color: var(--high-border);
+    }
+
+    .callout.error {
+      border-left-color: var(--critical);
+      background: var(--critical-bg);
+      border-color: var(--critical-border);
+    }
+
+    .callout h3 {
+      margin-top: 0;
+      font-size: 11px;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .callout ul, .coverage-notes ul, .limitations ul {
+      margin: 7px 0 0;
+      padding-left: 18px;
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+
+    .callout li + li, .coverage-notes li + li, .limitations li + li { margin-top: 3px; }
+
+    table {
+      width: 100%;
+      margin-top: 10px;
+      border-collapse: collapse;
+      font-size: 11.5px;
+    }
+
+    th {
+      padding: 7px 8px;
+      color: var(--faint);
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-align: left;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 7px 8px;
+      border: 1px solid #e7ebf0;
+      vertical-align: top;
+    }
+
+    tbody tr:nth-child(even) { background: #fcfdfe; }
+
+    .mono { font-family: var(--mono); font-size: 10.8px; }
+    .muted { color: var(--faint); }
+    .numeric { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .empty-row {
+      padding: 14px 8px;
+      color: var(--faint);
+      text-align: center;
+    }
+
+    .reason-list, .ref-list, .source-list {
+      margin: 0;
+      padding-left: 14px;
+      color: var(--muted);
+    }
+
+    .ref-list { padding-left: 0; list-style: none; }
+    .ref-list li + li { margin-top: 2px; }
+
+    .coverage-notes { margin-top: 12px; }
+    .coverage-notes ul { margin-top: 5px; }
+
+    .limitations { margin-top: 14px; }
+
+    .report-footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 30px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+      color: var(--faint);
+      font-size: 10.5px;
+    }
+
+    @media (max-width: 760px) {
+      .sheet { margin: 0; padding: 22px 18px; border-left: 0; border-right: 0; }
+      .report-header { flex-direction: column; gap: 16px; }
+      .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .report-footer { flex-direction: column; gap: 4px; }
+      table { display: block; overflow-x: auto; }
+    }
+
+    @media print {
+      body { background: #ffffff; }
+      .sheet { max-width: none; margin: 0; padding: 0; border: 0; }
+      a { color: inherit; text-decoration: none; }
+      section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <header class="report-header">
+      <div>
+        <p class="brand">Splyntara · Security report</p>
+        <h1>Dependency security assessment</h1>
+        <p class="project-name">{{ report.project.name or "Unknown project" }}</p>
+        <p class="project-path">{{ report.project.directory or "No project directory recorded" }}</p>
+      </div>
+      <div class="report-meta">
+        <span class="label">Generated</span>
+        <span>{{ report.generated_at }}</span>
+        <span class="label">Project risk</span>
+        <span class="badge risk-{{ report.summary.project_risk|lower }}">{{ report.summary.project_risk }}</span>
+        <span class="label">Coverage</span>
+        <span class="badge coverage-{{ report.summary.scan_coverage|lower }}">{{ report.summary.scan_coverage }}</span>
+        <span class="label">Report version</span>
+        <span>{{ report.version }}</span>
+      </div>
+    </header>
+
+    {% if report.warnings %}
+    <div class="callout warning">
+      <h3>Warnings</h3>
+      <ul>
+        {% for warning in report.warnings %}
+        <li>{{ warning }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if report.errors %}
+    <div class="callout error">
+      <h3>Errors</h3>
+      <ul>
+        {% for error in report.errors %}
+        <li>{{ error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    <section>
+      <h2>Scan summary</h2>
+      <div class="metric-grid">
+        <div class="metric">
+          <span class="metric-label">Dependencies</span>
+          <span class="metric-value">{{ report.summary.total_dependencies }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Vulnerable dependencies</span>
+          <span class="metric-value">{{ report.summary.vulnerable_dependencies }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Vulnerabilities</span>
+          <span class="metric-value">{{ report.summary.total_vulnerabilities }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Unknown risk</span>
+          <span class="metric-value">{{ report.summary.unknown_risk_dependencies }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Unresolved dependencies</span>
+          <span class="metric-value">{{ report.summary.unresolved_dependencies }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Incomplete coverage</span>
+          <span class="metric-value">{{ report.summary.incomplete_coverage_dependencies }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Dependencies checked</span>
+          <span class="metric-value">{{ report.summary.dependencies_checked }}</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Eligible dependencies</span>
+          <span class="metric-value">{{ report.summary.eligible_dependencies }}</span>
+        </div>
+      </div>
+
+      <div class="risk-overview">
+        <span class="badge risk-{{ report.summary.project_risk|lower }}">Project risk: {{ report.summary.project_risk }}</span>
+        <p>{{ report.summary.risk_reason or "No project risk reason was reported." }}</p>
+      </div>
+
+      <div class="risk-overview">
+        <span class="badge coverage-{{ report.summary.scan_coverage|lower }}">Coverage: {{ report.summary.scan_coverage }}</span>
+        <p>
+          Scan status: {{ report.summary.scan_status }} · discovery status:
+          {{ report.summary.source_status }} · risk counts:
+          {% for level, count in report.summary.risk_counts.items() %}
+          {{ level }} {{ count }}{% if not loop.last %} · {% endif %}
+          {% endfor %}
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>Project information</h2>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Manifest</th>
+            <th scope="col">Format</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="numeric">Declarations</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if report.project.manifests %}
+            {% for manifest in report.project.manifests %}
+            <tr>
+              <td class="mono">{{ manifest.filename or "unknown" }}</td>
+              <td>{{ manifest.format or "unknown" }}</td>
+              <td>{{ manifest.status or "unknown" }}</td>
+              <td class="numeric">{{ manifest.dependency_count }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4" class="empty-row">No supported manifests were detected.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Dependency inventory</h2>
+      <p class="section-note">
+        Declared constraints come from manifests. A resolved version is shown only
+        when it was supplied explicitly; manifest pins are not promoted to resolved
+        versions.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Package</th>
+            <th scope="col">Declared constraints</th>
+            <th scope="col">Resolved version</th>
+            <th scope="col">Manifest source</th>
+            <th scope="col">Risk</th>
+            <th scope="col" class="numeric">Vulns</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if report.inventory %}
+            {% for dependency in report.inventory %}
+            <tr>
+              <td class="mono">{{ dependency.name or dependency.package_name }}</td>
+              <td class="mono">{{ dependency.declared_constraints|join(" · ") if dependency.declared_constraints else "Any version" }}</td>
+              <td>
+                {% if dependency.resolved_version %}
+                <span class="mono">{{ dependency.resolved_version }}</span>
+                {% else %}
+                <span class="badge risk-high">Unresolved</span>
+                {% endif %}
+              </td>
+              <td>{{ dependency.manifest_sources|join(", ") if dependency.manifest_sources else "Not recorded" }}</td>
+              <td><span class="badge risk-{{ dependency.risk|lower }}">{{ dependency.risk }}</span></td>
+              <td class="numeric">{{ dependency.vulnerability_count }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="empty-row">No dependencies were discovered.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Vulnerability findings</h2>
+      <p class="section-note">
+        Findings are limited to dependencies with explicit resolved versions.
+        Unresolved dependencies are not queried against OSV.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Package</th>
+            <th scope="col">Advisory</th>
+            <th scope="col">Severity</th>
+            <th scope="col">Summary</th>
+            <th scope="col">Fixed versions</th>
+            <th scope="col">References</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if report.vulnerabilities %}
+            {% for finding in report.vulnerabilities %}
+            <tr>
+              <td>
+                <span class="mono">{{ finding.package_name or "unknown" }}</span>
+                <div class="muted">{{ finding.package_version or "" }}</div>
+              </td>
+              <td>
+                <span class="mono">{{ finding.vulnerability_id or "unknown" }}</span>
+                {% if finding.aliases %}
+                <div class="muted">{{ finding.aliases|join(", ") }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge risk-{{ (finding.severity_label if finding.severity_label in ["Critical", "High", "Medium", "Low"] else "unknown")|lower }}"{% if finding.severity and finding.severity != finding.severity_label %} title="Reported severity: {{ finding.severity }}"{% endif %}>{{ finding.severity_label or "Unknown" }}</span>
+              </td>
+              <td>{{ finding.summary or "No summary provided." }}</td>
+              <td class="mono">{{ finding.fixed_versions|join(", ") if finding.fixed_versions else "Not specified" }}</td>
+              <td>
+                {% if finding.references %}
+                <ul class="ref-list">
+                  {% for reference in finding.references %}
+                  <li><a href="{{ reference.url }}" target="_blank" rel="noopener noreferrer">{{ reference.type or "Advisory" }}</a></li>
+                  {% endfor %}
+                </ul>
+                {% else %}
+                <span class="muted">None</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="empty-row">No known OSV vulnerabilities were reported for the scanned dependencies.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>Risk classification</h2>
+      <p class="section-note">
+        Classifications and explanations are produced by the existing Splyntara
+        risk analyzer. Unknown risk is reported rather than treated as safe.
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Package</th>
+            <th scope="col">Version</th>
+            <th scope="col">Risk</th>
+            <th scope="col">Coverage</th>
+            <th scope="col" class="numeric">Vulns</th>
+            <th scope="col">Reasons</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if report.risk.dependencies %}
+            {% for dependency in report.risk.dependencies %}
+            <tr>
+              <td class="mono">{{ dependency.package_name }}</td>
+              <td>
+                {% if dependency.resolved_version %}
+                <span class="mono">{{ dependency.resolved_version }}</span>
+                {% else %}
+                <span class="badge risk-high">Unresolved</span>
+                {% endif %}
+              </td>
+              <td><span class="badge risk-{{ dependency.risk|lower }}">{{ dependency.risk }}</span></td>
+              <td><span class="badge coverage-{{ (dependency.scan_coverage or 'unavailable')|lower }}">{{ dependency.scan_coverage or "unavailable" }}</span></td>
+              <td class="numeric">{{ dependency.vulnerability_count }}</td>
+              <td>
+                {% if dependency.reasons %}
+                <ul class="reason-list">
+                  {% for reason in dependency.reasons %}
+                  <li>{{ reason }}</li>
+                  {% endfor %}
+                </ul>
+                {% else %}
+                <span class="muted">No explanation recorded.</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="6" class="empty-row">No dependencies were available for risk classification.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </section>
+
+    <section class="coverage-notes">
+      <h2>Coverage limitations</h2>
+      <ul>
+        {% for note in report.coverage.notes %}
+        <li>{{ note }}</li>
+        {% endfor %}
+      </ul>
+
+      <div class="limitations">
+        <h3>Known limitations</h3>
+        <ul>
+          {% for limitation in report.limitations %}
+          <li>{{ limitation }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </section>
+
+    <footer class="report-footer">
+      <span>Generated by Splyntara · {{ report.generated_at }}</span>
+      <span>Point-in-time snapshot · Not persisted</span>
+    </footer>
+  </div>
+</body>
+</html>
