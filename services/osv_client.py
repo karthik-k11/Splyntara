@@ -122,6 +122,11 @@ class OSVClient:
                 "OSV vulnerability response did not contain a valid ID"
             )
 
+        if response_id.strip() != vulnerability_id.strip():
+            raise OSVInvalidResponseError(
+                "OSV vulnerability response ID did not match the requested ID"
+            )
+
         return payload
 
     def _query_batch_chunk(
@@ -227,9 +232,7 @@ class OSVClient:
         except requests.ConnectionError as error:
             raise OSVConnectionError("could not connect to the OSV service") from error
         except requests.RequestException as error:
-            raise OSVError(
-                f"OSV request failed ({type(error).__name__})"
-            ) from error
+            raise OSVError("OSV request failed") from error
 
         if response.status_code == 429:
             raise OSVRateLimitError("OSV rate limit was exceeded")

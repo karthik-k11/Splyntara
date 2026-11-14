@@ -114,8 +114,8 @@ def build_sbom(
             source_warnings=source_warnings,
             timestamp=timestamp,
         )
-    except Exception as error:  # noqa: BLE001 - convert serializer failures to a result
-        message = f"could not generate SBOM: {type(error).__name__}: {error}"
+    except Exception:  # noqa: BLE001 - convert serializer failures to a result
+        message = "could not generate SBOM"
         return _error_result(
             message,
             project_directory=project_directory,
@@ -284,10 +284,10 @@ def _component_from_entry(
             name=package_name,
             version=resolved_version,
         )
-    except Exception as error:  # noqa: BLE001 - malformed package identifiers are skipped
+    except Exception:  # noqa: BLE001 - malformed package identifiers are skipped
         return None, [
             f"inventory entry {index} ({package_name!r}) has an invalid package "
-            f"identifier ({type(error).__name__}: {error}); it was skipped"
+            "identifier; it was skipped"
         ]
 
     reference = BomRef(str(purl))

@@ -26,6 +26,8 @@ STATUS_PARTIAL = "partial"
 STATUS_NO_MANIFESTS = "no_manifests"
 STATUS_ERROR = "error"
 
+MAX_MANIFEST_BYTES = 5 * 1024 * 1024
+
 ScanResult = dict[str, Any]
 ManifestInfo = dict[str, Any]
 
@@ -36,6 +38,7 @@ __all__ = [
     "STATUS_PARTIAL",
     "STATUS_NO_MANIFESTS",
     "STATUS_ERROR",
+    "MAX_MANIFEST_BYTES",
     "ScanResult",
     "ManifestInfo",
     "detect_manifests",
@@ -118,9 +121,41 @@ def discover_dependencies(project_directory: str | Path) -> ScanResult:
         }
 
         try:
-            content = safe_path.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError) as error:
-            warnings.append(f"{filename}: could not be read: {error}")
+            with safe_path.open("rb") as handle:
+                content_bytes = handle.read(MAX_MANIFEST_BYTES + 1)
+        except OSError as error:
+            reason = getattr(error, "strerror", None)
+            warning = f"{filename}: could not be read"
+            if reason:
+                warning += f" ({reason})"
+            warnings.append(warning)
+            manifests.append(
+                {
+                    **manifest_info,
+                    "dependency_count": 0,
+                    "status": "unreadable",
+                }
+            )
+            continue
+
+        if len(content_bytes) > MAX_MANIFEST_BYTES:
+            warnings.append(
+                f"{filename}: file exceeds the {MAX_MANIFEST_BYTES}-byte size "
+                "limit; it was skipped"
+            )
+            manifests.append(
+                {
+                    **manifest_info,
+                    "dependency_count": 0,
+                    "status": "skipped",
+                }
+            )
+            continue
+
+        try:
+            content = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            warnings.append(f"{filename}: could not be read (invalid UTF-8)")
             manifests.append(
                 {
                     **manifest_info,
@@ -132,10 +167,9 @@ def discover_dependencies(project_directory: str | Path) -> ScanResult:
 
         try:
             parse_result = parser(content, source_manifest=filename)
-        except Exception as error:  # noqa: BLE001 - never let one file abort the scan
+        except Exception:  # noqa: BLE001 - never let one file abort the scan
             warnings.append(
-                f"{filename}: unexpected error while parsing "
-                f"({type(error).__name__}: {error})"
+                f"{filename}: unexpected error while parsing; it was skipped"
             )
             manifests.append(
                 {
@@ -211,11 +245,17 @@ def _resolve_project_directory(project_directory: str | Path) -> Path:
 
     try:
         directory = Path(raw).expanduser().resolve(strict=True)
-    except (OSError, RuntimeError) as error:
-        raise ValueError(f"could not access project directory {raw!r}: {error}") from error
+    except (OSError, RuntimeError, ValueError) as error:
+        raise ValueError("could not access project directory") from error
 
     if not directory.is_dir():
-        raise ValueError(f"project path {raw!r} is not a directory")
+        raise ValueError("project path is not a directory")
+
+    try:
+        with os.scandir(directory) as entries:
+            next(entries, None)
+    except OSError as error:
+        raise ValueError("project directory could not be read") from error
 
     return directory
 
@@ -238,10 +278,12 @@ def _inspect_manifest_candidate(
 
     try:
         resolved = candidate.resolve(strict=True)
-    except (OSError, RuntimeError) as error:
-        return None, None, (
-            f"{filename}: could not be resolved safely ({error}); it was skipped"
-        )
+    except (OSError, RuntimeError, ValueError) as error:
+        reason = getattr(error, "strerror", None)
+        warning = f"{filename}: could not be resolved safely"
+        if reason:
+            warning += f" ({reason})"
+        return None, None, f"{warning}; it was skipped"
 
     if not _is_within_directory(resolved, directory):
         return None, None, (
@@ -250,7 +292,9 @@ def _inspect_manifest_candidate(
         )
 
     if not resolved.is_file():
-        return None, None, None
+        return None, None, (
+            f"{filename}: path is not a regular file; it was skipped"
+        )
 
     return candidate, resolved, None
 
