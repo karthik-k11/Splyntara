@@ -603,17 +603,32 @@ def _index_vulnerabilities(
 
 def _finding_risk(finding: dict[str, Any]) -> str:
     candidates: list[str] = []
+    details = finding.get("severity_details")
+    has_typed_cvss_score = isinstance(details, list) and any(
+        isinstance(detail, dict)
+        and isinstance(detail.get("type"), str)
+        and detail["type"].strip().upper() in {"CVSS_V2", "CVSS_V3"}
+        and (
+            _is_numeric_score(detail.get("score"))
+            or (
+                isinstance(detail.get("score"), str)
+                and bool(detail["score"].strip())
+            )
+        )
+        for detail in details
+    )
 
     for value in (
         finding.get("severity"),
         finding.get("cvss_score"),
         finding.get("score"),
     ):
+        if has_typed_cvss_score and _is_numeric_score(value):
+            continue
         risk = _risk_from_severity_value(value)
         if risk is not None:
             candidates.append(risk)
 
-    details = finding.get("severity_details")
     if isinstance(details, list):
         for detail in details:
             if not isinstance(detail, dict):
@@ -630,20 +645,24 @@ def _finding_risk(finding: dict[str, Any]) -> str:
 
 def _risk_from_severity_detail(detail: dict[str, Any]) -> str | None:
     score = detail.get("score")
-    risk = _risk_from_severity_value(score)
-    if risk is None:
-        return None
-
     score_type = detail.get("type")
-    if (
-        isinstance(score, str)
-        and _NUMERIC_SCORE.match(score.strip())
-        and isinstance(score_type, str)
-        and score_type.strip().upper() == "CVSS_V2"
-    ):
-        return _classify_cvss_score(float(score), cvss_version=2)
+    if isinstance(score_type, str) and _is_numeric_score(score):
+        cvss_version = {
+            "CVSS_V2": 2,
+            "CVSS_V3": 3,
+        }.get(score_type.strip().upper())
+        if cvss_version is not None:
+            return _classify_cvss_score(float(score), cvss_version=cvss_version)
 
-    return risk
+    return _risk_from_severity_value(score)
+
+
+def _is_numeric_score(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    return isinstance(value, str) and _NUMERIC_SCORE.match(value.strip()) is not None
 
 
 def _risk_from_severity_value(value: Any) -> str | None:

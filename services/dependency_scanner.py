@@ -13,6 +13,7 @@ from services.dependency_discovery import (
     STATUS_SUCCESS,
     ScanResult,
     detect_manifests,
+    detect_lockfiles,
     discover_dependencies,
     scan_project,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "STATUS_ERROR",
     "ScanResult",
     "detect_manifests",
+    "detect_lockfiles",
     "discover_dependencies",
     "scan_project",
 ]
