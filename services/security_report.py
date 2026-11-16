@@ -21,14 +21,15 @@ REPORT_FORMAT = "splyntara.security-report"
 REPORT_VERSION = 1
 
 LIMITATIONS = (
-    "Resolved versions must be supplied explicitly. Manifest declarations, "
-    "version ranges, and exact manifest pins are not treated as resolved "
-    "versions.",
+    "Only exact versions recorded in a supported uv.lock or poetry.lock are "
+    "treated as resolved. Manifest declarations and exact manifest pins alone "
+    "are not resolved versions.",
     "OSV coverage is limited to dependencies that have an explicit resolved "
     "version. Unresolved dependencies are reported as Unknown risk.",
+    "Lockfile dependency relationships are reported as recorded; environment "
+    "markers are not evaluated for a specific target environment.",
     "Risk reflects known OSV advisories and documented severity information "
-    "only. EPSS, exploitability, transitive dependency graphs, and proprietary "
-    "feeds are not used.",
+    "only. EPSS, exploitability, and proprietary feeds are not used.",
     "The report is a point-in-time snapshot and is not persisted by Splyntara.",
 )
 
@@ -107,6 +108,10 @@ def build_security_report(
             "manifests": [_manifest_entry(item) for item in _dict_list(
                 discovery.get("manifests")
             )],
+            "lockfiles": [_manifest_entry(item) for item in _dict_list(
+                discovery.get("lockfiles")
+            )],
+            "resolution": _dict(discovery.get("resolution")),
         },
         "scan_summary": summary,
         "summary": summary,
@@ -141,10 +146,13 @@ def build_security_report(
             "dependencies_checked": summary["dependencies_checked"],
             "eligible_dependencies": summary["eligible_dependencies"],
             "unresolved_dependencies": summary["unresolved_dependencies"],
+            "resolved_dependencies": summary["resolved_dependencies"],
             "incomplete_coverage_dependencies": summary[
                 "incomplete_coverage_dependencies"
             ],
             "vulnerable_dependencies": summary["vulnerable_dependencies"],
+            "lockfile_status": summary["lockfile_status"],
+            "lockfile": _text(_dict(discovery.get("resolution")).get("lockfile")) or None,
             "notes": _coverage_notes(summary),
         },
         "warnings": warnings,
@@ -167,11 +175,13 @@ def merge_risk_dependencies(
     discovery = discovery_result if isinstance(discovery_result, dict) else {}
     risk = risk_result if isinstance(risk_result, dict) else {}
 
-    inventory_by_name: dict[str, dict[str, Any]] = {}
+    inventory_by_package: dict[tuple[str, str | None], dict[str, Any]] = {}
     for entry in _dict_list(discovery.get("inventory")):
         package_name = _package_name(entry)
         if package_name is not None:
-            inventory_by_name[package_name] = entry
+            inventory_by_package[
+                (package_name, _text(entry.get("version")) or None)
+            ] = entry
 
     merged: list[dict[str, Any]] = []
     for entry in _dict_list(risk.get("dependencies")):
@@ -180,7 +190,11 @@ def merge_risk_dependencies(
             continue
 
         dependency = dict(entry)
-        inventory_entry = inventory_by_name.get(package_name, {})
+        resolved_version = _text(dependency.get("resolved_version")) or None
+        inventory_entry = inventory_by_package.get(
+            (package_name, resolved_version),
+            inventory_by_package.get((package_name, None), {}),
+        )
         sources = _string_list(inventory_entry.get("source_manifests"))
 
         if not sources:
@@ -196,6 +210,22 @@ def merge_risk_dependencies(
         )
         dependency["optional_groups"] = _string_list(
             inventory_entry.get("optional_groups")
+        )
+        dependency["dependency_classification"] = _text(
+            inventory_entry.get("dependency_classification")
+        ) or "unknown"
+        dependency["resolution_source"] = _text(
+            inventory_entry.get("resolution_source")
+        ) or None
+        dependency["package_source"] = _dict(inventory_entry.get("package_source"))
+        dependency["package_sources"] = _dict_list(
+            inventory_entry.get("package_sources")
+        )
+        dependency["dependency_relationships"] = _dict_list(
+            inventory_entry.get("dependency_relationships")
+        )
+        dependency["lockfile_metadata"] = _dict(
+            inventory_entry.get("lockfile_metadata")
         )
         merged.append(dependency)
 
@@ -250,6 +280,8 @@ def _scan_summary(
         or _text(vulnerability.get("status"))
         or "unknown"
     )
+    resolution = _dict(discovery.get("resolution"))
+    lockfile_status = _text(resolution.get("status")) or "unknown"
 
     return {
         "total_dependencies": total_dependencies,
@@ -260,7 +292,9 @@ def _scan_summary(
         "risk_counts": risk_counts,
         "unknown_risk_dependencies": risk_counts.get("Unknown", 0),
         "unresolved_dependencies": unresolved_dependencies,
+        "resolved_dependencies": max(total_dependencies - unresolved_dependencies, 0),
         "incomplete_coverage_dependencies": incomplete_coverage,
+        "lockfile_status": lockfile_status,
         "project_risk": project_risk,
         "risk_reason": _text(risk.get("risk_reason"))
         or _text(risk_summary.get("risk_reason")),
@@ -285,9 +319,19 @@ def _inventory_entry(dependency: dict[str, Any]) -> dict[str, Any]:
         ),
         "resolved_version": dependency.get("resolved_version"),
         "version_resolved": bool(dependency.get("version_resolved")),
+        "dependency_classification": dependency.get(
+            "dependency_classification", "unknown"
+        ),
         "manifest_sources": _string_list(
             dependency.get("manifest_sources")
         ),
+        "resolution_source": dependency.get("resolution_source"),
+        "package_source": _dict(dependency.get("package_source")),
+        "package_sources": _dict_list(dependency.get("package_sources")),
+        "dependency_relationships": _dict_list(
+            dependency.get("dependency_relationships")
+        ),
+        "lockfile_metadata": _dict(dependency.get("lockfile_metadata")),
         "dependency_types": _string_list(dependency.get("dependency_types")),
         "risk": dependency.get("risk_classification") or "Unknown",
         "risk_reason": dependency.get("risk_reason") or "",
@@ -334,6 +378,7 @@ def _manifest_entry(manifest: dict[str, Any]) -> dict[str, Any]:
         "format": manifest.get("format"),
         "status": manifest.get("status"),
         "dependency_count": _int_or_zero(manifest.get("dependency_count")),
+        "package_count": _int_or_zero(manifest.get("package_count")),
     }
 
 
@@ -342,6 +387,31 @@ def _coverage_notes(summary: dict[str, Any]) -> list[str]:
     unresolved = summary["unresolved_dependencies"]
     incomplete = summary["incomplete_coverage_dependencies"]
     coverage = summary["scan_coverage"]
+    lockfile_status = summary["lockfile_status"]
+
+    if lockfile_status == "missing":
+        notes.append(
+            "No supported Python lockfile was found. Manifest constraints were "
+            "not used as resolved versions."
+        )
+    elif lockfile_status == "ambiguous":
+        notes.append(
+            "Both supported lockfiles were present. Neither was selected, so "
+            "dependencies remain unresolved."
+        )
+    elif lockfile_status == "partial":
+        notes.append(
+            "Lockfile resolution was partial. Review warnings for malformed "
+            "records or declared dependencies absent from the lockfile."
+        )
+    elif lockfile_status in {
+        "malformed", "unsupported", "empty", "unreadable", "unsafe", "oversized",
+        "failed",
+    }:
+        notes.append(
+            f"The selected lockfile could not provide a complete inventory "
+            f"(status: {lockfile_status})."
+        )
 
     if unresolved:
         notes.append(
@@ -448,6 +518,10 @@ def _dict_list(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, dict)]
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _string_list(value: Any) -> list[str]:

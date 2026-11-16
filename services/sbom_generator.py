@@ -5,8 +5,9 @@ This service deliberately consumes the normalized output of
 uses the CycloneDX model and JSON serializer so the generated document follows
 the published schema.
 
-Only declared version constraints are known at this stage. They are recorded as
-component properties and are never promoted to a resolved component version.
+Resolved versions and relationships are consumed from discovery when present.
+Declared constraints remain component properties and are never promoted to
+resolved component versions.
 """
 
 import json
@@ -157,6 +158,7 @@ def _build_document(
     warnings: list[str] = []
     components: list[Component] = []
     seen_refs: set[str] = set()
+    entries_by_ref: dict[str, dict[str, Any]] = {}
 
     inventory = discovery_result.get("inventory")
 
@@ -186,6 +188,8 @@ def _build_document(
 
         seen_refs.add(reference)
         components.append(component)
+        if isinstance(entry, dict):
+            entries_by_ref[reference] = entry
 
     components.sort(key=lambda item: str(item.bom_ref))
 
@@ -201,7 +205,10 @@ def _build_document(
         Property(name="splyntara:component_count", value=str(len(components))),
         Property(
             name="splyntara:version_policy",
-            value="declared constraints only; resolved versions are not invented",
+            value=(
+                "resolved versions are used only from supported lockfiles; "
+                "manifest constraints are never promoted to resolved versions"
+            ),
         ),
     ]
 
@@ -230,10 +237,39 @@ def _build_document(
         dependencies=[Dependency(ref=component.bom_ref) for component in components],
     )
 
+    references_by_name: dict[str, list[BomRef]] = {}
+    for component in components:
+        component_name = normalize_package_name(component.name)
+        references_by_name.setdefault(component_name, []).append(component.bom_ref)
+
+    package_dependencies: list[Dependency] = []
+    for source_component in components:
+        entry = entries_by_ref.get(str(source_component.bom_ref), {})
+
+        relationship_refs: list[Dependency] = []
+        relationships = entry.get("dependency_relationships")
+        if isinstance(relationships, list):
+            for relationship in relationships:
+                if not isinstance(relationship, dict):
+                    continue
+                target_name = _string_or_empty(
+                    relationship.get("normalized_name")
+                )
+                targets = references_by_name.get(target_name, [])
+                if target_name and len(targets) == 1 and targets[0] != source_component.bom_ref:
+                    relationship_refs.append(Dependency(ref=targets[0]))
+        if relationship_refs:
+            package_dependencies.append(
+                Dependency(
+                    ref=source_component.bom_ref,
+                    dependencies=relationship_refs,
+                )
+            )
+
     bom = Bom(
         components=components,
         metadata=metadata,
-        dependencies=[project_dependency],
+        dependencies=[project_dependency, *package_dependencies],
     )
 
     outputter = make_outputter(bom, OutputFormat.JSON, SchemaVersion.V1_5)
@@ -364,6 +400,70 @@ def _component_properties(
     properties.append(
         Property(name="splyntara:declaration_count", value=str(len(declarations)))
     )
+
+    resolution_source = _string_list(entry.get("resolution_source"))
+    package_sources = entry.get("package_sources")
+    if not package_sources:
+        package_sources = [entry.get("package_source")]
+    for source in package_sources:
+        if isinstance(source, dict):
+            properties.append(
+                Property(
+                    name="splyntara:package_source",
+                    value=json.dumps(source, sort_keys=True, separators=(",", ":")),
+                )
+            )
+    for source in resolution_source:
+        properties.append(
+            Property(name="splyntara:resolved_from", value=source)
+        )
+
+    classification = entry.get("dependency_classification")
+    if isinstance(classification, str) and classification.strip():
+        properties.append(
+            Property(
+                name="splyntara:dependency_classification",
+                value=classification.strip(),
+            )
+        )
+
+    lockfile_metadata = entry.get("lockfile_metadata")
+    if isinstance(lockfile_metadata, dict) and lockfile_metadata:
+        properties.append(
+            Property(
+                name="splyntara:lockfile_metadata",
+                value=json.dumps(
+                    lockfile_metadata,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        )
+
+    relationships = entry.get("dependency_relationships")
+    if isinstance(relationships, list):
+        for relationship in relationships:
+            if not isinstance(relationship, dict):
+                continue
+            name = relationship.get("normalized_name")
+            constraint = relationship.get("version_constraint")
+            if isinstance(name, str) and name.strip():
+                value = name.strip()
+                if isinstance(constraint, str) and constraint.strip():
+                    value += f" {constraint.strip()}"
+                properties.append(
+                    Property(name="splyntara:dependency", value=value)
+                )
+                properties.append(
+                    Property(
+                        name="splyntara:dependency_relationship",
+                        value=json.dumps(
+                            relationship,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    )
+                )
 
     return properties
 

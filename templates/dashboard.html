@@ -34,9 +34,9 @@
         <p class="eyebrow">Security overview</p>
         <h1 id="page-title">Dependency security dashboard</h1>
         <p class="lede">
-          Inspect Python manifests, review OSV findings, and export an evidence
-          snapshot for a local project. Analysis runs once per submission, and
-          resolved versions are never inferred from manifest declarations.
+          Inspect Python manifests and supported lockfiles, review OSV findings,
+          and export an evidence snapshot. Manifest constraints are never
+          inferred to be resolved versions.
         </p>
       </div>
 
@@ -59,8 +59,9 @@
           </button>
         </div>
         <p id="directory-hint" class="field-hint">
-          Scans <code>requirements.txt</code> and <code>pyproject.toml</code>.
-          Only packages with an explicit resolved version are sent to OSV.
+          Scans <code>requirements.txt</code>, <code>pyproject.toml</code>,
+          <code>uv.lock</code>, and <code>poetry.lock</code>. Only packages with
+          an exact lockfile version are sent to OSV.
         </p>
         <p id="directory-error" class="field-error" role="alert" hidden></p>
       </form>
@@ -164,8 +165,16 @@
             <span id="coverage-status" class="badge coverage-unavailable">Unavailable</span>
           </div>
           <div class="strip-item">
+            <span class="strip-label">Resolved</span>
+            <span id="metric-resolved" class="strip-value">0</span>
+          </div>
+          <div class="strip-item">
             <span class="strip-label">Unresolved</span>
             <span id="metric-unresolved" class="strip-value">0</span>
+          </div>
+          <div class="strip-item">
+            <span class="strip-label">Lockfile</span>
+            <span id="lockfile-status" class="strip-value">Unknown</span>
           </div>
           <div class="strip-item">
             <span class="strip-label">Incomplete coverage</span>
@@ -208,9 +217,11 @@
             <thead>
               <tr>
                 <th scope="col">Package</th>
+                <th scope="col">Class</th>
                 <th scope="col">Declared constraints</th>
                 <th scope="col">Resolved version</th>
                 <th scope="col">Manifest source</th>
+                <th scope="col">Package source</th>
                 <th scope="col">Risk</th>
                 <th scope="col" class="numeric">Vulns</th>
               </tr>

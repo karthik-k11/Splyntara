@@ -40,9 +40,11 @@
       "metric-medium",
       "metric-low",
       "metric-unknown",
+      "metric-resolved",
       "metric-unresolved",
       "metric-incomplete",
       "metric-checked",
+      "lockfile-status",
       "project-risk-badge",
       "risk-overview-badge",
       "coverage-status",
@@ -339,12 +341,19 @@
     setText("metric-medium", riskCounts.Medium || 0);
     setText("metric-low", riskCounts.Low || 0);
     setText("metric-unknown", riskCounts.Unknown || 0);
+    setText("metric-resolved", summary.resolved_dependencies || 0);
     setText("metric-unresolved", summary.unresolved_dependencies || 0);
     setText("metric-incomplete", summary.incomplete_coverage_dependencies || 0);
     setText("metric-checked", summary.dependencies_checked || 0);
 
     replaceBadge("project-risk-badge", summary.project_risk || "Unknown");
     replaceBadge("risk-overview-badge", summary.project_risk || "Unknown");
+    var resolution = project.resolution || {};
+    var resolutionLabel = titleCase(resolution.status || summary.lockfile_status);
+    if (resolution.lockfile) {
+      resolutionLabel += " · " + resolution.lockfile;
+    }
+    setText("lockfile-status", resolutionLabel);
 
     var coverage = elements["coverage-status"];
     coverage.className =
@@ -401,6 +410,15 @@
       }
       addCell(row, packageCell);
 
+      addCell(
+        row,
+        node(
+          "span",
+          "small",
+          titleCase(dependency.dependency_classification || "unknown")
+        )
+      );
+
       var constraints = (dependency.declared_constraints || []).join(" · ");
       if (constraints) {
         addCell(row, node("span", "constraint-code", constraints));
@@ -409,7 +427,16 @@
       }
 
       if (dependency.resolved_version) {
-        addCell(row, node("span", "version-code", dependency.resolved_version));
+        var versionCell = document.createElement("div");
+        versionCell.appendChild(
+          node("span", "version-code", dependency.resolved_version)
+        );
+        if (dependency.resolution_source) {
+          versionCell.appendChild(
+            node("div", "muted small", "from " + dependency.resolution_source)
+          );
+        }
+        addCell(row, versionCell);
       } else {
         var unresolved = node("span", "tag-unresolved", "Unresolved");
         unresolved.title =
@@ -428,6 +455,25 @@
         addCell(row, "", "muted");
       }
 
+      var packageSource = dependency.package_source;
+      if (packageSource && typeof packageSource === "object") {
+        addCell(
+          row,
+          node(
+            "span",
+            "small",
+            packageSource.kind || packageSource.type || "source"
+          )
+        );
+      } else if (Array.isArray(dependency.package_sources) && dependency.package_sources.length) {
+        addCell(
+          row,
+          node("span", "small", dependency.package_sources.length + " sources")
+        );
+      } else {
+        addCell(row, "", "muted");
+      }
+
       addCell(row, riskBadge(risk));
       addCell(
         row,
@@ -441,7 +487,9 @@
     var noteParts = [manifestLabel(project)];
     noteParts.push(
       dependencies.length +
-        " normalized dependencies · " +
+        " inventory entries · " +
+        (summary.resolved_dependencies || 0) +
+        " resolved · " +
         (summary.unresolved_dependencies || 0) +
         " unresolved"
     );
