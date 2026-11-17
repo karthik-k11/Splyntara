@@ -24,6 +24,10 @@
         <span>CycloneDX 1.5</span>
         <span class="meta-divider" aria-hidden="true"></span>
         <span>OSV</span>
+        <form class="logout-form" method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button button-secondary" type="submit">Sign out</button>
+        </form>
       </div>
     </div>
   </header>
@@ -75,6 +79,25 @@
         <ul id="banner-list" class="banner-list" hidden></ul>
       </div>
     </div>
+
+    <section class="panel history-panel" aria-labelledby="history-title">
+      <div class="panel-heading panel-heading-tools">
+        <div>
+          <p class="section-kicker">Saved locally</p>
+          <h2 id="history-title">Scan history</h2>
+        </div>
+        <button id="clear-history" class="button button-secondary" type="button" disabled>
+          Clear history
+        </button>
+      </div>
+      <p class="panel-note">
+        Full reports are stored in this app's local database. The latest 50 scans
+        are kept; delete scans you no longer need.
+      </p>
+      <p id="history-status" class="inline-status" role="status" aria-live="polite"></p>
+      <ul id="history-list" class="history-list"></ul>
+      <p id="history-empty" class="table-empty" hidden>No saved scans yet.</p>
+    </section>
 
     <section id="initial-state" class="initial-state" aria-labelledby="initial-title">
       <div>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Sign in to Splyntara</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span class="brand-copy">
+          <span class="brand-name">Splyntara</span>
+          <span class="brand-caption">Local workbench</span>
+        </span>
+      </div>
+      <span class="header-meta">Sign in</span>
+    </div>
+  </header>
+  <main class="page auth-page">
+    <section class="panel auth-card" aria-labelledby="login-title">
+      <p class="section-kicker">Welcome back</p>
+      <h1 id="login-title">Sign in</h1>
+      <p class="panel-note">Sign in to open your local dashboard and saved scans.</p>
+      {% if error %}
+      <p class="auth-error" role="alert">{{ error }}</p>
+      {% endif %}
+      <form method="post" action="{{ url_for('login') }}" class="auth-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label for="username">Username</label>
+        <input id="username" name="username" type="text" autocomplete="username"
+               required autofocus>
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password"
+               autocomplete="current-password" required>
+        <button class="button button-primary" type="submit">Sign in</button>
+      </form>
+    </section>
+  </main>
+</body>
+</html>
