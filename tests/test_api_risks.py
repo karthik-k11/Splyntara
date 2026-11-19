@@ -202,7 +202,9 @@ def test_post_handles_osv_timeout_without_crashing(client, tmp_path, monkeypatch
     assert payload["summary"]["incomplete_coverage_dependency_count"] == 1
     assert payload["dependencies"][0]["risk_classification"] == "Unknown"
     assert payload["dependencies"][0]["scan_coverage"] == "unavailable"
-    assert payload["errors"] == ["OSV request timed out"]
+    assert payload["errors"] == [
+        "OSV batch request failed for 1 dependencies: OSV request timed out"
+    ]
 
 
 def test_post_handles_partial_osv_scan_without_findings(

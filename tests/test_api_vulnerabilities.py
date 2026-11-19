@@ -196,7 +196,9 @@ def test_post_handles_osv_timeout_without_crashing(client, tmp_path, monkeypatch
     assert payload["status"] == "partial"
     assert payload["total_dependencies_checked"] == 0
     assert payload["vulnerabilities"] == []
-    assert payload["errors"] == ["OSV request timed out"]
+    assert payload["errors"] == [
+        "OSV batch request failed for 1 dependencies: OSV request timed out"
+    ]
 
 
 def test_post_rejects_missing_project_directory(client):

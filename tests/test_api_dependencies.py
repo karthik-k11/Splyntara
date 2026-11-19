@@ -25,7 +25,7 @@ def test_post_discovers_requirements_dependencies(client, tmp_path):
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["status"] == STATUS_SUCCESS
+    assert payload["status"] == STATUS_PARTIAL
     assert payload["project_name"] == tmp_path.name
     assert payload["dependency_count"] == 2
     assert payload["unique_dependency_count"] == 2
@@ -54,7 +54,7 @@ dev = ["pytest>=8.0"]
 
     assert response.status_code == 200
     payload = response.get_json()
-    assert payload["status"] == STATUS_SUCCESS
+    assert payload["status"] == STATUS_PARTIAL
     assert payload["regular_dependency_count"] == 1
     assert payload["optional_dependency_count"] == 1
     assert {item["normalized_name"] for item in payload["inventory"]} == {
