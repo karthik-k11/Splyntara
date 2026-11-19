@@ -393,6 +393,10 @@
           <span class="metric-value">{{ report.summary.unknown_risk_dependencies }}</span>
         </div>
         <div class="metric">
+          <span class="metric-label">Resolved dependencies</span>
+          <span class="metric-value">{{ report.summary.resolved_dependencies }}</span>
+        </div>
+        <div class="metric">
           <span class="metric-label">Unresolved dependencies</span>
           <span class="metric-value">{{ report.summary.unresolved_dependencies }}</span>
         </div>
@@ -453,22 +457,53 @@
           {% endif %}
         </tbody>
       </table>
+      <h3>Lockfile resolution</h3>
+      <p class="section-note">
+        Status: {{ report.coverage.lockfile_status }}
+        {% if report.coverage.lockfile %} · Selected: <span class="mono">{{ report.coverage.lockfile }}</span>{% endif %}
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Lockfile</th>
+            <th scope="col">Format</th>
+            <th scope="col">Status</th>
+            <th scope="col" class="numeric">Packages</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if report.project.lockfiles %}
+            {% for lockfile in report.project.lockfiles %}
+            <tr>
+              <td class="mono">{{ lockfile.filename or "unknown" }}</td>
+              <td>{{ lockfile.format or "unknown" }}</td>
+              <td>{{ lockfile.status or "unknown" }}</td>
+              <td class="numeric">{{ lockfile.package_count }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="4" class="empty-row">No supported lockfile was found.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
     </section>
 
     <section>
       <h2>Dependency inventory</h2>
       <p class="section-note">
-        Declared constraints come from manifests. A resolved version is shown only
-        when it was supplied explicitly; manifest pins are not promoted to resolved
-        versions.
+        Declared constraints come from manifests. Resolved versions come only from
+        a supported lockfile; manifest pins are not promoted to resolved versions.
       </p>
       <table>
         <thead>
           <tr>
             <th scope="col">Package</th>
+            <th scope="col">Class</th>
             <th scope="col">Declared constraints</th>
             <th scope="col">Resolved version</th>
             <th scope="col">Manifest source</th>
+            <th scope="col">Lockfile</th>
+            <th scope="col">Package source</th>
             <th scope="col">Risk</th>
             <th scope="col" class="numeric">Vulns</th>
           </tr>
@@ -478,6 +513,7 @@
             {% for dependency in report.inventory %}
             <tr>
               <td class="mono">{{ dependency.name or dependency.package_name }}</td>
+              <td>{{ dependency.dependency_classification or "unknown" }}</td>
               <td class="mono">{{ dependency.declared_constraints|join(" · ") if dependency.declared_constraints else "Any version" }}</td>
               <td>
                 {% if dependency.resolved_version %}
@@ -487,12 +523,23 @@
                 {% endif %}
               </td>
               <td>{{ dependency.manifest_sources|join(", ") if dependency.manifest_sources else "Not recorded" }}</td>
+              <td class="mono">{{ dependency.resolution_source or "Not resolved" }}</td>
+              <td>
+                {% if dependency.package_source %}
+                {{ dependency.package_source.kind or dependency.package_source.type or "source" }}
+                {% if dependency.package_source.location %}<div class="muted">{{ dependency.package_source.location }}</div>{% endif %}
+                {% elif dependency.package_sources %}
+                {{ dependency.package_sources|length }} source(s)
+                {% else %}
+                <span class="muted">Not recorded</span>
+                {% endif %}
+              </td>
               <td><span class="badge risk-{{ dependency.risk|lower }}">{{ dependency.risk }}</span></td>
               <td class="numeric">{{ dependency.vulnerability_count }}</td>
             </tr>
             {% endfor %}
           {% else %}
-            <tr><td colspan="6" class="empty-row">No dependencies were discovered.</td></tr>
+            <tr><td colspan="9" class="empty-row">No dependencies were discovered.</td></tr>
           {% endif %}
         </tbody>
       </table>

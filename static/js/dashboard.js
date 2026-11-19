@@ -69,7 +69,12 @@
       "sbom-download",
       "report-json",
       "report-html",
-      "report-meta"
+      "report-meta",
+      "history-list",
+      "history-status",
+      "history-empty",
+      "history-count",
+      "clear-history"
     ].forEach(function (id) {
       elements[id] = byId(id);
     });
@@ -84,6 +89,24 @@
       element.textContent = String(text);
     }
     return element;
+  }
+
+  function appendIcon(element, name) {
+    var paths = {
+      view: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7zm10-3a3 3 0 1 0 0 6 3 3 0 0 0 0-6z",
+      delete: "M4 7h16M10 11v6m4-6v6M5 7l1 14h12l1-14M9 7V4h6v3"
+    };
+    if (!paths[name]) {
+      return;
+    }
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "icon");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    var path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", paths[name]);
+    svg.appendChild(path);
+    element.appendChild(svg);
   }
 
   function addCell(row, content, className) {
@@ -263,6 +286,7 @@
         state.reportHtml = payload.report_html || null;
         render(payload);
         renderStatus(payload, directory);
+        refreshHistory();
       })
       .catch(function (error) {
         state.data = null;
@@ -370,6 +394,158 @@
 
     elements["results"].hidden = false;
     elements["initial-state"].hidden = true;
+  }
+
+  function refreshHistory() {
+    elements["history-status"].textContent = "Loading saved scans…";
+    return fetch("/api/history")
+      .then(readJson)
+      .then(function (payload) {
+        if (!Array.isArray(payload.history)) {
+          throw new Error("The scan history response was invalid.");
+        }
+        renderHistory(payload.history);
+        elements["history-status"].textContent = "";
+      })
+      .catch(function (error) {
+        elements["history-status"].textContent =
+          "Could not load scan history: " + (error.message || String(error));
+      });
+  }
+
+  function renderHistory(history) {
+    var list = elements["history-list"];
+    list.innerHTML = "";
+    elements["history-empty"].hidden = history.length > 0;
+    elements["clear-history"].disabled = history.length === 0;
+    elements["history-count"].textContent = history.length
+      ? history.length + (history.length === 1 ? " saved scan" : " saved scans")
+      : "No saved scans";
+
+    history.forEach(function (item) {
+      var row = node("li", "history-item");
+      var copy = node("div", "history-item-copy");
+      var title = node(
+        "span",
+        "history-item-title",
+        item.project_name || "Unnamed project"
+      );
+      var summary = item.summary || {};
+      var meta = node(
+        "span",
+        "history-item-meta",
+        new Date(item.created_at).toLocaleString() +
+          " · " +
+          (summary.total_dependencies || 0) +
+          " dependencies · " +
+          (summary.total_vulnerabilities || 0) +
+          " findings · " +
+          (summary.project_risk || "Unknown")
+      );
+      copy.appendChild(title);
+      copy.appendChild(meta);
+
+      var actions = node("div", "history-item-actions");
+      var viewButton = node("button", "button button-secondary", "View");
+      viewButton.textContent = "";
+      appendIcon(viewButton, "view");
+      viewButton.appendChild(document.createTextNode("View"));
+      viewButton.type = "button";
+      viewButton.dataset.action = "view";
+      viewButton.dataset.historyId = String(item.id);
+      viewButton.setAttribute(
+        "aria-label",
+        "View scan for " + (item.project_name || "unnamed project")
+      );
+      var deleteButton = node("button", "button button-secondary", "Delete");
+      deleteButton.textContent = "";
+      appendIcon(deleteButton, "delete");
+      deleteButton.appendChild(document.createTextNode("Delete"));
+      deleteButton.type = "button";
+      deleteButton.dataset.action = "delete";
+      deleteButton.dataset.historyId = String(item.id);
+      deleteButton.setAttribute(
+        "aria-label",
+        "Delete saved scan for " + (item.project_name || "unnamed project")
+      );
+      actions.appendChild(viewButton);
+      actions.appendChild(deleteButton);
+      row.appendChild(copy);
+      row.appendChild(actions);
+      list.appendChild(row);
+    });
+  }
+
+  function loadHistoryItem(historyId) {
+    elements["history-status"].textContent = "Loading saved scan…";
+    fetch("/api/history/" + encodeURIComponent(historyId))
+      .then(function (response) {
+        return readJson(response).then(function (payload) {
+          if (!response.ok) {
+            throw new Error(payload.error || "Could not load saved scan.");
+          }
+          return payload;
+        });
+      })
+      .then(function (payload) {
+        state.data = payload;
+        state.report = payload.report || null;
+        state.reportHtml = payload.report_html || null;
+        elements["project-directory"].value =
+          (payload.project && payload.project.directory) || "";
+        render(payload);
+        setBanner(
+          "success",
+          "Saved scan loaded",
+          "Viewing the saved result from " +
+            new Date(payload.history_created_at).toLocaleString() +
+            "."
+        );
+        elements["history-status"].textContent = "";
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      })
+      .catch(function (error) {
+        elements["history-status"].textContent =
+          "Could not load saved scan: " + (error.message || String(error));
+      });
+  }
+
+  function deleteHistoryItem(historyId) {
+    if (!window.confirm("Delete this saved scan?")) {
+      return;
+    }
+    fetch("/api/history/" + encodeURIComponent(historyId), {
+      method: "DELETE"
+    })
+      .then(readJson)
+      .then(function (payload) {
+        if (payload.status !== "deleted") {
+          throw new Error(payload.error || "Could not delete saved scan.");
+        }
+        return refreshHistory();
+      })
+      .catch(function (error) {
+        elements["history-status"].textContent =
+          "Could not delete saved scan: " + (error.message || String(error));
+      });
+  }
+
+  function clearHistory() {
+    if (!window.confirm("Delete all saved scans from this computer?")) {
+      return;
+    }
+    fetch("/api/history", { method: "DELETE" })
+      .then(readJson)
+      .then(function (payload) {
+        if (payload.status !== "deleted") {
+          throw new Error(payload.error || "Could not clear scan history.");
+        }
+        return refreshHistory();
+      })
+      .catch(function (error) {
+        elements["history-status"].textContent =
+          "Could not clear scan history: " + (error.message || String(error));
+      });
   }
 
   function replaceBadge(id, risk) {
@@ -1007,11 +1183,24 @@
     elements["report-html"].addEventListener("click", function () {
       downloadReport("html");
     });
+    elements["history-list"].addEventListener("click", function (event) {
+      var button = event.target.closest("button[data-action]");
+      if (!button) {
+        return;
+      }
+      if (button.dataset.action === "view") {
+        loadHistoryItem(button.dataset.historyId);
+      } else if (button.dataset.action === "delete") {
+        deleteHistoryItem(button.dataset.historyId);
+      }
+    });
+    elements["clear-history"].addEventListener("click", clearHistory);
   }
 
   function init() {
     cacheElements();
     bindEvents();
+    refreshHistory();
   }
 
   if (document.readyState === "loading") {
