@@ -1,0 +1,5 @@
+# Demo dependencies for Splyntara dependency discovery and SBOM generation.
+# These are ordinary utility packages. No resolved versions are declared, so
+# vulnerability scanning reports them as unresolved and does not contact OSV.
+click>=8.1,<9.0
+colorama>=0.4,<1.0

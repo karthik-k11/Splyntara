@@ -1,0 +1,4 @@
+# Development and test dependencies.
+# Includes the runtime requirements so one install is enough for contributors.
+-r requirements.txt
+pytest>=8.0,<10.0
