@@ -13,6 +13,7 @@ def app(database_path):
     application = create_app({
         "TESTING": True,
         "DATABASE": database_path,
+        "AUTH_ENABLED": False,
     })
 
     yield application
