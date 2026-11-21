@@ -84,6 +84,12 @@ def test_parse_requirements_txt_handles_comments_and_blank_lines():
     ]
 
 
+def test_parse_requirements_txt_preserves_pinned_version():
+    result = parse_requirements_txt("requests==2.31.0\n")
+
+    assert result["dependencies"][0]["version_constraint"] == "==2.31.0"
+
+
 def test_parse_requirements_txt_normalizes_compound_version_constraints():
     result = parse_requirements_txt("Flask>=3.1,<4.0\n")
 

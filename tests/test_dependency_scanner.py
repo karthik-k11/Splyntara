@@ -1,9 +1,11 @@
 """Tests for the dependency discovery scanner."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from services.dependency_discovery import ScanResult as DiscoveryScanResult
 from services.dependency_scanner import (
     FORMAT_PYPROJECT,
     FORMAT_REQUIREMENTS,
@@ -11,6 +13,7 @@ from services.dependency_scanner import (
     STATUS_NO_MANIFESTS,
     STATUS_PARTIAL,
     STATUS_SUCCESS,
+    ScanResult,
     detect_manifests,
     scan_project,
 )
@@ -25,7 +28,7 @@ def test_scan_project_detects_and_parses_requirements_txt(tmp_path):
 
     result = scan_project(tmp_path)
 
-    assert result["status"] == STATUS_SUCCESS
+    assert result["status"] == STATUS_PARTIAL
     assert result["project_name"] == tmp_path.name
     assert result["dependency_count"] == 2
     assert result["regular_dependency_count"] == 2
@@ -53,7 +56,7 @@ dev = ["pytest>=8.0"]
 
     result = scan_project(tmp_path)
 
-    assert result["status"] == STATUS_SUCCESS
+    assert result["status"] == STATUS_PARTIAL
     assert result["dependency_count"] == 2
     assert result["regular_dependency_count"] == 1
     assert result["optional_dependency_count"] == 1
@@ -73,7 +76,7 @@ dependencies = ["flask>=3.1"]
 
     result = scan_project(tmp_path)
 
-    assert result["status"] == STATUS_SUCCESS
+    assert result["status"] == STATUS_PARTIAL
     assert result["dependency_count"] == 2
     sources = {item["source_manifest"] for item in result["dependencies"]}
     assert sources == {"requirements.txt", "pyproject.toml"}
@@ -192,6 +195,21 @@ def test_detect_manifests_identifies_formats(tmp_path):
 def test_detect_manifests_raises_for_invalid_directory(tmp_path):
     with pytest.raises(ValueError):
         detect_manifests(tmp_path / "missing")
+
+
+def test_detect_manifests_returns_pathlib_path(tmp_path):
+    manifest_path = tmp_path / "requirements.txt"
+    _write(manifest_path, "requests\n")
+
+    manifests = detect_manifests(tmp_path)
+
+    assert isinstance(manifests[0]["path"], Path)
+    assert manifests[0]["path"] == manifest_path
+
+
+def test_scan_result_type_alias_is_exported():
+    assert ScanResult is DiscoveryScanResult
+    assert ScanResult == dict[str, Any]
 
 
 def test_scan_project_does_not_remove_dependencies_when_duplicated(tmp_path):

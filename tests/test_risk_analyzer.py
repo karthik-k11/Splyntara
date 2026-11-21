@@ -232,6 +232,33 @@ def test_numeric_cvss_score_is_used():
     assert report["dependencies"][0]["risk_classification"] == RISK_HIGH
 
 
+@pytest.mark.parametrize(
+    ("cvss_type", "score", "expected"),
+    [
+        ("CVSS_V2", "9.8", RISK_HIGH),
+        ("CVSS_V2", "6.9", RISK_MEDIUM),
+        ("CVSS_V3", "9.8", RISK_CRITICAL),
+        ("CVSS_V3", "7.5", RISK_HIGH),
+    ],
+)
+def test_numeric_cvss_score_uses_typed_version_thresholds(
+    cvss_type,
+    score,
+    expected,
+):
+    finding = _finding(
+        "requests",
+        "2.31.0",
+        "OSV-TYPED-SCORE",
+        severity=score,
+        severity_details=[{"type": cvss_type, "score": score}],
+    )
+
+    report = _report([_entry("requests", "2.31.0")], [finding])
+
+    assert report["dependencies"][0]["risk_classification"] == expected
+
+
 def test_finding_without_usable_severity_is_unknown_not_low():
     finding = _finding(
         "requests",
