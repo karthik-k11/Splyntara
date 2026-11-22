@@ -14,12 +14,17 @@ venv/
 # Testing
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 
 # Database
 instance/*.db
+instance/*.db-*
 instance/*.sqlite
+instance/*.sqlite-*
 instance/*.sqlite3
+instance/*.sqlite3-*
 
 # Logs
 *.log
@@ -36,3 +41,6 @@ Thumbs.db
 reports/
 exports/
 *.sbom.json
+*-sbom.json
+*-security-report.json
+*-security-report.html
