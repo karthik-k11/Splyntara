@@ -157,6 +157,24 @@ def test_post_rejects_file_path(client, tmp_path):
     assert "is not a directory" in response.get_json()["error"]
 
 
+def test_post_rejects_project_outside_configured_roots(client, tmp_path):
+    allowed_root = tmp_path / "allowed"
+    allowed_root.mkdir()
+    outside_project = tmp_path / "outside"
+    outside_project.mkdir()
+    client.application.config["ALLOWED_PROJECT_ROOTS"] = (allowed_root.resolve(),)
+
+    response = client.post(
+        ENDPOINT,
+        json={"project_directory": str(outside_project)},
+    )
+
+    assert response.status_code == 400
+    assert response.get_json()["error"] == (
+        "project directory is outside configured allowed roots"
+    )
+
+
 def test_post_accepts_directory_alias(client, tmp_path):
     _write(tmp_path / "requirements.txt", "flask\n")
 
