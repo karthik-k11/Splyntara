@@ -12,6 +12,7 @@ def _client(tmp_path):
             "DATABASE": tmp_path / "auth-history.db",
             "AUTH_ENABLED": True,
             "HISTORY_RETENTION": 50,
+            "ALLOWED_PROJECT_ROOTS": [tmp_path],
         }
     )
     return app, app.test_client()
@@ -101,7 +102,9 @@ def test_setup_validates_password_and_csrf_token(tmp_path):
 def test_single_account_setup_login_logout_and_session_security(tmp_path):
     app, client = _client(tmp_path)
 
-    assert _setup_account(client).status_code == 302
+    setup_response = _setup_account(client)
+    assert setup_response.status_code == 302
+    assert "Secure" in setup_response.headers["Set-Cookie"]
     assert client.get("/").status_code == 200
 
     with app.app_context():
@@ -135,6 +138,30 @@ def test_single_account_setup_login_logout_and_session_security(tmp_path):
     successful_login = _login(client)
     assert successful_login.status_code == 302
     assert client.get("/").status_code == 200
+    with app.app_context():
+        from database import get_db
+
+        assert get_db().execute(
+            "SELECT COUNT(*) FROM login_failures"
+        ).fetchone()[0] == 0
+
+
+def test_login_rate_limit_blocks_attempts_after_configured_limit(tmp_path):
+    _, client = _client(tmp_path)
+    _setup_account(client)
+    client.get("/")
+    with client.session_transaction() as browser_session:
+        form_csrf = browser_session["form_csrf"]
+    client.post("/logout", data={"csrf_token": form_csrf})
+
+    for _ in range(5):
+        assert _login(client, password="incorrect password").status_code == 401
+
+    blocked = _login(client)
+
+    assert blocked.status_code == 429
+    assert 1 <= int(blocked.headers["Retry-After"]) <= 900
+    assert "Too many sign-in attempts" in blocked.get_data(as_text=True)
 
 
 def test_dashboard_scan_is_saved_and_history_can_be_loaded_and_deleted(
