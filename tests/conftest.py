@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app import create_app
@@ -14,6 +16,7 @@ def app(database_path):
         "TESTING": True,
         "DATABASE": database_path,
         "AUTH_ENABLED": False,
+        "ALLOWED_PROJECT_ROOTS": [database_path.parent, Path.home()],
     })
 
     yield application
