@@ -1,15 +1,15 @@
 # Splyntara demo project
 
 This directory is a small, self-contained project for trying Splyntara without
-creating a dependency manifest from scratch. It contains only a valid
-`requirements.txt` with two ordinary utility packages:
+creating a dependency manifest from scratch. It contains a valid
+`requirements.txt` and `uv.lock` with two ordinary utility packages:
 
 - `click`
 - `colorama`
 
-The manifest declares version constraints, not resolved versions. Discovery and
-CycloneDX SBOM generation work fully offline. A vulnerability scan will report
-both dependencies as unresolved and will not contact OSV, which is expected.
+Both dependencies have exact resolved versions in `uv.lock`. Discovery,
+CycloneDX SBOM generation, and vulnerability scanning can run with complete
+version coverage for this demo.
 
 ## Analyze with the dashboard
 
