@@ -1,12 +1,36 @@
 import json
 import re
+import secrets
 from pathlib import Path
 
-from flask import Flask, Response, jsonify, render_template, request
+from flask import (
+    Flask,
+    Response,
+    current_app,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.exceptions import HTTPException
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from config import Config
-from database import init_app as init_database
+from database import (
+    clear_scan_history,
+    clear_login_failures,
+    create_local_user,
+    delete_scan_history,
+    get_scan_history,
+    has_local_user,
+    init_app as init_database,
+    list_scan_history,
+    register_login_attempt,
+    save_scan_history,
+    verify_local_user,
+)
 from services.dependency_discovery import STATUS_ERROR, discover_dependencies
 from services.risk_analyzer import STATUS_ERROR as RISK_STATUS_ERROR
 from services.risk_analyzer import analyze_risks
@@ -40,6 +64,31 @@ def create_app(config=None):
     if config is not None:
         app.config.from_mapping(config)
 
+    history_retention = app.config["HISTORY_RETENTION"]
+    if (
+        isinstance(history_retention, bool)
+        or not isinstance(history_retention, int)
+        or history_retention < 1
+    ):
+        raise ValueError("HISTORY_RETENTION must be a positive integer")
+
+    configured_roots = app.config["ALLOWED_PROJECT_ROOTS"]
+    if not isinstance(configured_roots, (list, tuple)) or not configured_roots:
+        raise ValueError("ALLOWED_PROJECT_ROOTS must contain existing directories")
+
+    allowed_roots = []
+    try:
+        for root in configured_roots:
+            resolved_root = Path(root).expanduser().resolve(strict=True)
+            if not resolved_root.is_dir():
+                raise ValueError
+            allowed_roots.append(resolved_root)
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
+        raise ValueError(
+            "ALLOWED_PROJECT_ROOTS must contain existing directories"
+        ) from error
+    app.config["ALLOWED_PROJECT_ROOTS"] = tuple(allowed_roots)
+
     database_path = Path(app.config["DATABASE"])
     app.config["DATABASE"] = database_path
     database_path.parent.mkdir(parents=True, exist_ok=True)
@@ -49,7 +98,39 @@ def create_app(config=None):
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Cache-Control", "no-store")
         return response
+
+    @app.context_processor
+    def inject_csrf_token():
+        return {"csrf_token": _csrf_token("form_csrf")}
+
+    @app.before_request
+    def require_local_login():
+        if (
+            not app.config["AUTH_ENABLED"]
+            or request.endpoint in {"health", "login", "setup", "static"}
+        ):
+            return None
+
+        if not has_local_user():
+            if _is_api_request():
+                return jsonify(
+                    {
+                        "status": "error",
+                        "error": "initial account setup is required",
+                    }
+                ), 503
+            return redirect(url_for("setup"))
+
+        if session.get("authenticated") is True:
+            return None
+
+        if _is_api_request():
+            return jsonify(
+                {"status": "error", "error": "authentication required"}
+            ), 401
+        return redirect(url_for("login"))
 
     @app.errorhandler(HTTPException)
     def handle_http_exception(error):
@@ -79,6 +160,110 @@ def create_app(config=None):
             "status": "ok",
             "application": "Splyntara"
         }), 200
+
+    @app.route("/setup", methods=["GET", "POST"])
+    def setup():
+        if has_local_user():
+            return redirect(url_for("login"))
+
+        token = _csrf_token("setup_csrf")
+        error = None
+        if request.method == "POST":
+            if not _valid_csrf("setup_csrf", request.form.get("csrf_token")):
+                error = "The setup form expired. Reload the page and try again."
+            else:
+                username = request.form.get("username", "").strip()
+                password = request.form.get("password", "")
+                confirmation = request.form.get("confirm_password", "")
+
+                if not 3 <= len(username) <= 64:
+                    error = "Username must be between 3 and 64 characters."
+                elif len(password) < 12:
+                    error = "Password must be at least 12 characters."
+                elif len(password) > 1024:
+                    error = "Password must be no more than 1024 characters."
+                elif password != confirmation:
+                    error = "Passwords do not match."
+                elif not create_local_user(
+                    username,
+                    generate_password_hash(password),
+                ):
+                    error = "The local account has already been created."
+                else:
+                    session.clear()
+                    session["authenticated"] = True
+                    session["username"] = username
+                    session.permanent = True
+                    return redirect(url_for("dashboard_page"))
+
+        return render_template("setup.html", csrf_token=token, error=error), (
+            400 if request.method == "POST" and error else 200
+        )
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login():
+        if not has_local_user():
+            return redirect(url_for("setup"))
+        if session.get("authenticated") is True:
+            return redirect(url_for("dashboard_page"))
+
+        token = _csrf_token("login_csrf")
+        error = None
+        response_status = 200
+        rate_limited = False
+        if request.method == "POST":
+            if not _valid_csrf("login_csrf", request.form.get("csrf_token")):
+                error = "The sign-in form expired. Reload the page and try again."
+                response_status = 400
+            else:
+                username = request.form.get("username", "").strip()
+                password = request.form.get("password", "")
+                remote_address = request.remote_addr or "unknown"
+                retry_after = register_login_attempt(
+                    remote_address,
+                    max_attempts=app.config["LOGIN_RATE_LIMIT_ATTEMPTS"],
+                    window_seconds=app.config["LOGIN_RATE_LIMIT_WINDOW_SECONDS"],
+                )
+                if retry_after is not None:
+                    error = "Too many sign-in attempts. Wait for the rate limit to expire."
+                    response_status = 429
+                    rate_limited = True
+                else:
+                    user = verify_local_user(username)
+                    if (
+                        len(password) > 1024
+                        or user is None
+                        or not check_password_hash(user["password_hash"], password)
+                    ):
+                        error = "Invalid username or password."
+                        response_status = 401
+                    else:
+                        clear_login_failures(remote_address)
+                        session.clear()
+                        session["authenticated"] = True
+                        session["username"] = username
+                        session.permanent = True
+                        return redirect(url_for("dashboard_page"))
+
+        headers = (
+            {
+                "Retry-After": str(retry_after),
+            }
+            if rate_limited
+            else {}
+        )
+        return (
+            render_template("login.html", csrf_token=token, error=error),
+            response_status,
+            headers,
+        )
+
+    @app.post("/logout")
+    def logout():
+        if not _valid_csrf("form_csrf", request.form.get("csrf_token")):
+            return "The sign-out form expired. Reload the page and try again.", 400
+        session.clear()
+        return redirect(url_for("login"))
 
     @app.route("/api/dependencies/discover", methods=["GET", "POST"])
     def discover_dependencies_endpoint():
@@ -173,8 +358,37 @@ def create_app(config=None):
             "security_report.html",
             report=result["report"],
         )
+        result["history_id"] = save_scan_history(result)
 
         return jsonify(result), 200
+
+    @app.get("/api/history")
+    def scan_history_endpoint():
+        return jsonify({"history": list_scan_history()}), 200
+
+    @app.get("/api/history/<int:history_id>")
+    def scan_history_item_endpoint(history_id):
+        result = get_scan_history(history_id)
+        if result is None:
+            return jsonify({"error": "scan history item not found"}), 404
+        report = result.get("report")
+        if isinstance(report, dict):
+            result["report_html"] = render_template(
+                "security_report.html",
+                report=report,
+            )
+        return jsonify(result), 200
+
+    @app.delete("/api/history/<int:history_id>")
+    def delete_scan_history_endpoint(history_id):
+        if not delete_scan_history(history_id):
+            return jsonify({"error": "scan history item not found"}), 404
+        return jsonify({"status": "deleted", "id": history_id}), 200
+
+    @app.delete("/api/history")
+    def clear_scan_history_endpoint():
+        deleted_count = clear_scan_history()
+        return jsonify({"status": "deleted", "count": deleted_count}), 200
 
     @app.post("/api/reports/security")
     def export_security_report_endpoint():
@@ -233,6 +447,23 @@ def create_app(config=None):
     return app
 
 
+def _csrf_token(session_key):
+    token = session.get(session_key)
+    if not isinstance(token, str):
+        token = secrets.token_urlsafe(32)
+        session[session_key] = token
+    return token
+
+
+def _valid_csrf(session_key, submitted_token):
+    expected = session.get(session_key)
+    return (
+        isinstance(expected, str)
+        and isinstance(submitted_token, str)
+        and secrets.compare_digest(expected, submitted_token)
+    )
+
+
 def _project_directory_from_request():
     """Return the requested project directory and an optional error message."""
     payload, payload_error = _request_payload()
@@ -261,7 +492,29 @@ def _project_directory_from_request():
     if "\x00" in raw_value:
         return None, "project_directory contains invalid characters"
 
-    return raw_value, None
+    normalized_value = raw_value.strip()
+    if (
+        len(normalized_value) >= 2
+        and normalized_value[0] == normalized_value[-1] == '"'
+    ):
+        normalized_value = normalized_value[1:-1]
+
+    try:
+        project_directory = Path(normalized_value).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        return None, "could not access project directory"
+
+    if not project_directory.is_dir():
+        return None, "project path is not a directory"
+
+    allowed_roots = current_app.config["ALLOWED_PROJECT_ROOTS"]
+    if not any(
+        project_directory == root or project_directory.is_relative_to(root)
+        for root in allowed_roots
+    ):
+        return None, "project directory is outside configured allowed roots"
+
+    return str(project_directory), None
 
 
 def _request_payload():
